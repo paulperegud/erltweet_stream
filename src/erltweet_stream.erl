@@ -36,10 +36,10 @@ new(AccountKeys, Opts) ->
 
 %% TO DO: locations method
 filter(Pid, Method, SearchKeys) when Method =:= follow; Method =:= track ->
-    gen_server:call(Pid, {filter, Method, SearchKeys}).
+    gen_server:call(Pid, {filter, Method, SearchKeys}, infinity).
 
 stop(Pid) ->
-    gen_server:call(Pid, stop).
+    gen_server:call(Pid, stop, infinity).
 
 %%--------------------------------------------------------------------
 %% @doc
