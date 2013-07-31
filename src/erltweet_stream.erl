@@ -11,9 +11,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/0, start_link/2]).
 
--export([start/2]).
+-export([new/2,
+         filter/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -21,7 +22,7 @@
 
 -include("erltweet_stream.hrl").
 
--define(SERVER, ?MODULE). 
+-define(SERVER, ?MODULE).
 
 %% -record{state [...] - state is defined in erltweet_stream.hrl
 
@@ -29,9 +30,16 @@
 %%% API
 %%%===================================================================
 
-start(AccountKeys, Opts) ->
-    gen_server:call(?SERVER, {start, AccountKeys, Opts}).
-    
+new(AccountKeys, Opts) ->
+    erltweet_stream:start_link(AccountKeys, Opts).
+
+%% TO DO: locations method
+filter(Pid, Method, SearchKeys) when Method =:= follow; Method =:= track ->
+    gen_server:call(Pid, {filter, Method, SearchKeys}).
+
+stop(Pid) ->
+    gen_server:call(Pid, stop).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -40,7 +48,9 @@ start(AccountKeys, Opts) ->
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+    {error, not_set_account}.
+start_link(AccountKeys, Opts) ->
+    gen_server:start_link(?MODULE, [AccountKeys, Opts], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -57,8 +67,10 @@ start_link() ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
-    {ok, #state{}}.
+init([AccountKeys, Opts]) ->
+    Account = erltweet_utils:account_to_record(AccountKeys),
+    State  = erltweet_utils:parse_opts(Opts, #state{}),
+    {ok, State#state{account = Account}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -74,10 +86,26 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({start, AccountKeys, Opts}, _From, State) ->
-    Account = erltweet_utils:account_to_record(AccountKeys),
-    State2  = erltweet_utils:parse_opts(Opts, State),
-    {reply, ok, State2#state{account = Account}};
+handle_call({filter, Method, SearchKeys}, _From, #state{account = Account} = State) ->
+    Keys2 = erltweet_utils:convert_list(SearchKeys, str_list),
+    QS = [{atom_to_list(Method), string:join(Keys2, ",")}],
+    case connect(?URI_FILTER, QS, Account) of
+        {ok, ReqId} ->
+            {reply, ok, State#state{request_id = ReqId} };
+        {error, Reason} = Error ->
+            ?ERR_LOG("Error connection: ~p~n", [Reason]),
+            {reply, Error, State}
+    end;
+
+handle_call(stop, _From, #state{request_id = ReqId} = State) ->
+    case ibrowse:stream_close(ReqId) of
+        ok ->
+            ok;
+        {error, unknown_req_id} ->
+            ?WARN_LOG("Try close unknown request_id: ~p~n", [ReqId]),
+            ok
+    end,
+    {stop, ok, State}.
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -106,7 +134,41 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info({ibrowse_async_headers, ReqId, _Code, _Headers}, State = #state{request_id = ReqId}) ->
+    ibrowse:stream_next(ReqId),
+    {noreply, State};
+
+handle_info({ibrowse_async_response, ReqId, Body}, State = #state{request_id = ReqId,
+                                                                  buffer     = Buffer}) ->
+    case binary:split(Body, <<$\r>>, [global, trim]) of
+        [Body] -> %% No \r
+            ok = ibrowse:stream_next(ReqId),
+            {noreply, State#state{buffer = <<Buffer/binary, $|, Body/binary>>}};
+        [Head|Tail] ->
+            RealBuffer = re:replace(Buffer, <<"\\|">>, <<>>, [global, {return, binary}]),
+            {Jsons, NewBuffer} =
+                try extract_jsons([<<RealBuffer/binary, Head/binary>> | Tail])
+                catch
+                    _:Error ->
+                        error_logger:error_msg("Error in parse json: ~p~n~n", [Error])
+                end,
+            io:fwrite("Jsons: ~p~n", [Jsons]),
+            ok = ibrowse:stream_next(ReqId),
+            {noreply, State#state{buffer = NewBuffer}}
+    end;
+
+handle_info({ibrowse_async_response, ReqId, {error, req_timedout}}, State = #state{request_id = ReqId}) ->
+    ?ERR_LOG("There're no more twitter results~n", []),
+    {stop, normal, State};
+handle_info({ibrowse_async_response, ReqId, {error, connection_closed}}, State = #state{request_id = ReqId}) ->
+    ?ERR_LOG("Twitter hung up on us~n", []),
+    {stop, normal, State};
+handle_info({ibrowse_async_response, ReqId, {error, Error}}, State = #state{request_id = ReqId}) ->
+    ?ERR_LOG("Error querying twitter: ~p~n", [Error]),
+    {stop, {error, Error}, State};
+
 handle_info(_Info, State) ->
+    io:fwrite("Unknown info message: ~p~n", [_Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -137,3 +199,51 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+connect(Uri, QS, Account) ->
+    io:fwrite("Connect!~n", []),
+    Consumer = {Account#account.consumer_key,
+                Account#account.consumer_secret,
+                hmac_sha1},
+    Token  = Account#account.token,
+    Secret = Account#account.secret,
+    Options = [{stream_to,       {self(), once}},
+               {response_format, binary},
+               {connect_timeout, 25000}], %% wait for connected
+
+    try oauth:get(Uri, QS, Consumer, Token, Secret, Options, infinity) of
+        {ibrowse_req_id, ReqId}      -> {ok, ReqId};
+        {ok, Status, _Headers, Body} -> {error, {Status, Body}};
+        {error, Reason}              -> {error, Reason}
+    catch
+        _:{timeout, _} -> {error, internal_timeout};
+        _:Error        -> {error, Error}
+    end.
+
+extract_jsons(Lines) ->
+    extract_jsons(Lines, []).
+extract_jsons([], Acc) ->
+    {lists:reverse(Acc), <<>>};
+extract_jsons([<<$\n>>], Acc) ->
+    {lists:reverse(Acc), <<>>};
+extract_jsons([NewBuffer], Acc) ->
+    %%HACK: Even when Twitter Stream API docs say that...
+    %%          ...every object is returned on its own line, and ends with a carriage return. Newline
+    %%          characters (\n) may occur in object elements (the text element of a status object, for
+    %%          example), but carriage returns (\r) should not.
+    %%      ...sometimes they just don't send the \r after the last object
+    try jsx:decode(NewBuffer) of
+        Json ->
+            {lists:reverse([Json|Acc]), <<>>}
+    catch
+        throw:{invalid_json, NewBuffer, _Err} ->
+            {lists:reverse(Acc), NewBuffer}
+    end;
+extract_jsons([<<>> | Rest], Acc) ->
+    extract_jsons(Rest, Acc);
+extract_jsons([<<$\n>> | Rest], Acc) ->
+    extract_jsons(Rest, Acc);
+extract_jsons([Next | Rest], Acc) ->
+    Json = jsx:decode(Next),
+    extract_jsons(Rest, [Json | Acc]).
+

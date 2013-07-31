@@ -50,20 +50,8 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    RestartStrategy = one_for_one,
-    MaxRestarts = 1000,
-    MaxSecondsBetweenRestarts = 3600,
-
-    SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
-
-    Restart = permanent,
-    Shutdown = 2000,
-    Type = supervisor,
-
-    AChild = {erltweet_stream, {erltweet_stream, start_link, []},
-              Restart, Shutdown, Type, [erltweet_stream]},
-
-    {ok, {SupFlags, [AChild]}}.
+    SupFlags = {one_for_one, 1000, 3600},
+    {ok, {SupFlags, []}}.
 
 %%%===================================================================
 %%% Internal functions

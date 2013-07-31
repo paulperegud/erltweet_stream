@@ -3,7 +3,7 @@
   {vsn,          "0.0.1"},
   {modules,      [erltweet_stream_app]},
   {registered,   [erltweet_stream_sup]},
-  {applications, [kernel, stdlib, sasl]},
+  {applications, [kernel, stdlib, sasl, ssl, ibrowse]},
   {mod,          {erltweet_stream_app,[]}},
   {env,          []},
   {start_phases, []}

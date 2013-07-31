@@ -11,7 +11,7 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1]).
+-export([start/0, start/2, stop/1]).
 
 %%%===================================================================
 %%% Application callbacks
@@ -33,6 +33,15 @@
 %%      StartArgs = term()
 %% @end
 %%--------------------------------------------------------------------
+start() ->
+    application:start(crypto, permanent),
+    application:start(asn1, permanent),
+    application:start(public_key, permanent),
+    application:start(ssl, permanent),
+    application:start(ibrowse, permanent),
+    application:start(inets, permanent),
+    application:start(erltweet_stream, permanent).
+
 start(_StartType, _StartArgs) ->
     case erltweep_stream_sup:start_link() of
         {ok, Pid} ->

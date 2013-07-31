@@ -16,4 +16,4 @@ clean:  $(REBAR)
 	$(REBAR) clean
 
 console:
-	erl -sname 'erltweet_console' -pa ${DEPS_EBIN}
+	erl -sname 'erltweet_console' -pa ${DEPS_EBIN} -run erltweet_stream_app
