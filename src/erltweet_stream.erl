@@ -14,7 +14,8 @@
 -export([start_link/0, start_link/2]).
 
 -export([new/2,
-         filter/3]).
+         filter/3,
+         stop/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -105,7 +106,7 @@ handle_call(stop, _From, #state{request_id = ReqId} = State) ->
             ?WARN_LOG("Try close unknown request_id: ~p~n", [ReqId]),
             ok
     end,
-    {stop, ok, State}.
+    {stop, ok, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -139,7 +140,8 @@ handle_info({ibrowse_async_headers, ReqId, _Code, _Headers}, State = #state{requ
     {noreply, State};
 
 handle_info({ibrowse_async_response, ReqId, Body}, State = #state{request_id = ReqId,
-                                                                  buffer     = Buffer}) ->
+                                                                  buffer     = Buffer,
+                                                                  callback   = CB}) ->
     case binary:split(Body, <<$\r>>, [global, trim]) of
         [Body] -> %% No \r
             ok = ibrowse:stream_next(ReqId),
@@ -150,9 +152,12 @@ handle_info({ibrowse_async_response, ReqId, Body}, State = #state{request_id = R
                 try extract_jsons([<<RealBuffer/binary, Head/binary>> | Tail])
                 catch
                     _:Error ->
-                        error_logger:error_msg("Error in parse json: ~p~n~n", [Error])
+                        ?ERR_LOG("Error in parse json: ~p~n", [Error])
                 end,
-            io:fwrite("Jsons: ~p~n", [Jsons]),
+            case is_function(CB) of
+                true  -> [CB(Tweet) || Tweet <- Jsons];
+                false -> ?WARN_LOG("Received tweets, but callback is undefined...~n", [])
+            end,
             ok = ibrowse:stream_next(ReqId),
             {noreply, State#state{buffer = NewBuffer}}
     end;
