@@ -1,0 +1,10 @@
+{application, erltweet_stream,
+ [{description,  "Erlang Twitter Stream"},
+  {vsn,          "0.0.1"},
+  {modules,      [erltweet_stream_app]},
+  {registered,   [erltweet_stream_sup]},
+  {applications, [kernel, stdlib, sasl]},
+  {mod,          {erltweet_stream_app,[]}},
+  {env,          []},
+  {start_phases, []}
+ ]}.
