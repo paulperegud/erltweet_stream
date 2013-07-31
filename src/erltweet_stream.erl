@@ -238,6 +238,9 @@ extract_jsons([NewBuffer], Acc) ->
     %%          example), but carriage returns (\r) should not.
     %%      ...sometimes they just don't send the \r after the last object
     try jsx:decode(NewBuffer) of
+        {incomplete, _} ->
+            ?WARN_LOG("Incomplete json: ~p~n", [NewBuffer]),
+            {Acc, <<>>};
         Json ->
             {lists:reverse([Json|Acc]), <<>>}
     catch
@@ -249,6 +252,11 @@ extract_jsons([<<>> | Rest], Acc) ->
 extract_jsons([<<$\n>> | Rest], Acc) ->
     extract_jsons(Rest, Acc);
 extract_jsons([Next | Rest], Acc) ->
-    Json = jsx:decode(Next),
-    extract_jsons(Rest, [Json | Acc]).
+    case jsx:decode(Next) of
+        {incomplete, _} ->
+            ?WARN_LOG("Incomplete json: ~p~n", [Next]),
+            extract_jsons(Rest, Acc);
+        Json ->
+            extract_jsons(Rest, [Json | Acc])
+    end.
 
