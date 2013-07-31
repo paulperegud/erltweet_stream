@@ -92,6 +92,7 @@ handle_call({filter, Method, SearchKeys}, _From, #state{account = Account} = Sta
     QS = [{atom_to_list(Method), string:join(Keys2, ",")}],
     case connect(?URI_FILTER, QS, Account) of
         {ok, ReqId} ->
+            ?INFO_LOG("Start stream for QS: ~p~nReqId: ~p~n", [QS, ReqId]),
             {reply, ok, State#state{request_id = ReqId} };
         {error, Reason} = Error ->
             ?ERR_LOG("Error connection: ~p~n", [Reason]),
@@ -99,6 +100,7 @@ handle_call({filter, Method, SearchKeys}, _From, #state{account = Account} = Sta
     end;
 
 handle_call(stop, _From, #state{request_id = ReqId} = State) ->
+    ?INFO_LOG("Stop request: ~p", [ReqId]),
     case ibrowse:stream_close(ReqId) of
         ok ->
             ok;
@@ -106,7 +108,7 @@ handle_call(stop, _From, #state{request_id = ReqId} = State) ->
             ?WARN_LOG("Try close unknown request_id: ~p~n", [ReqId]),
             ok
     end,
-    {stop, ok, State};
+    {stop, normal, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -174,6 +176,9 @@ handle_info({ibrowse_async_response, ReqId, {error, connection_closed}}, State =
 handle_info({ibrowse_async_response, ReqId, {error, Error}}, State = #state{request_id = ReqId}) ->
     ?ERR_LOG("Error querying twitter: ~p~n", [Error]),
     {stop, {error, Error}, State};
+handle_info({ibrowse_async_response_end, ReqId}, State = #state{request_id = ReqId}) ->
+    ?INFO_LOG("End stream: ~p~n", [ReqId]),
+    {stop, normal, State};
 
 handle_info(_Info, State) ->
     io:fwrite("Unknown info message: ~p~n", [_Info]),
@@ -209,7 +214,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 connect(Uri, QS, Account) ->
-    io:fwrite("Connect!~n", []),
     Consumer = {Account#account.consumer_key,
                 Account#account.consumer_secret,
                 hmac_sha1},
