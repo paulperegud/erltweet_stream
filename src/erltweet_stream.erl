@@ -143,6 +143,9 @@ handle_info({ibrowse_async_response, ReqId, Body}, State = #state{request_id = R
                                                                   buffer     = Buffer,
                                                                   callback   = CB}) ->
     case binary:split(Body, <<$\r>>, [global, trim]) of
+        [] ->
+            ok = ibrowse:stream_next(ReqId),
+            {noreply, State};
         [Body] -> %% No \r
             ok = ibrowse:stream_next(ReqId),
             {noreply, State#state{buffer = <<Buffer/binary, $|, Body/binary>>}};
