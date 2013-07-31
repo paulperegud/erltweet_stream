@@ -39,7 +39,7 @@ filter(Pid, Method, SearchKeys) when Method =:= follow; Method =:= track ->
     gen_server:call(Pid, {filter, Method, SearchKeys}, infinity).
 
 stop(Pid) ->
-    gen_server:call(Pid, stop, infinity).
+    gen_server:cast(Pid, stop).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -99,17 +99,6 @@ handle_call({filter, Method, SearchKeys}, _From, #state{account = Account} = Sta
             {reply, Error, State}
     end;
 
-handle_call(stop, _From, #state{request_id = ReqId} = State) ->
-    ?INFO_LOG("Stop request: ~p", [ReqId]),
-    case ibrowse:stream_close(ReqId) of
-        ok ->
-            ok;
-        {error, unknown_req_id} ->
-            ?WARN_LOG("Try close unknown request_id: ~p~n", [ReqId]),
-            ok
-    end,
-    {stop, normal, State};
-
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -124,6 +113,17 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast(stop, #state{request_id = ReqId} = State) ->
+    ?INFO_LOG("Stop request: ~p", [ReqId]),
+    case ibrowse:stream_close(ReqId) of
+        ok ->
+            ok;
+        {error, unknown_req_id} ->
+            ?WARN_LOG("Try close unknown request_id: ~p~n", [ReqId]),
+            ok
+    end,
+    {stop, normal, State};
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
