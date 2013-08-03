@@ -261,7 +261,7 @@ extract_jsons([<<$\n>> | Rest], Acc) ->
 extract_jsons([Next | Rest], Acc) ->
     case jsx:decode(Next) of
         {incomplete, _} ->
-            ?WARN_LOG("Incomplete json: ~p~n", [Next]),
+            ?DEBUG_LOG("Incomplete json: ~p~n", [Next]),
             extract_jsons(Rest, Acc);
         Json ->
             extract_jsons(Rest, [Json | Acc])
