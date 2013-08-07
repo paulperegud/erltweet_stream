@@ -92,20 +92,20 @@ handle_call({filter, Method, SearchKeys}, _From, #state{account = Account} = Sta
     QS = [{atom_to_list(Method), string:join(Keys2, ",")}],
     case connect(?URI_FILTER, QS, Account) of
         {ok, ReqId} ->
-            ?INFO_LOG("Start stream for QS: ~p~nReqId: ~p~n", [QS, ReqId]),
+            ?INFO("Start stream for QS: ~p~nReqId: ~p~n", [QS, ReqId]),
             {reply, ok, State#state{request_id = ReqId} };
         {error, Reason} = Error ->
-            ?ERR_LOG("Error connection: ~p~n", [Reason]),
+            ?ERROR("Error connection: ~p~n", [Reason]),
             {reply, Error, State}
     end;
 
 handle_call(stop, _From, #state{request_id = ReqId} = State) ->
-    ?INFO_LOG("Stop request: ~p", [ReqId]),
+    ?INFO("Stop request: ~p", [ReqId]),
     case ibrowse:stream_close(ReqId) of
         ok ->
             ok;
         {error, unknown_req_id} ->
-            ?WARN_LOG("Try close unknown request_id: ~p~n", [ReqId]),
+            ?WARNING("Try close unknown request_id: ~p~n", [ReqId]),
             ok
     end,
     {stop, normal, State};
@@ -157,27 +157,27 @@ handle_info({ibrowse_async_response, ReqId, Body}, State = #state{request_id = R
                 try extract_jsons([<<RealBuffer/binary, Head/binary>> | Tail])
                 catch
                     _:Error ->
-                        ?ERR_LOG("Error in parse json: ~p~n", [Error])
+                        ?ERROR("Error in parse json: ~p~n", [Error])
                 end,
             case is_function(CB) of
                 true  -> [CB(Tweet) || Tweet <- Jsons];
-                false -> ?WARN_LOG("Received tweets, but callback is undefined...~n", [])
+                false -> ?WARNING("Received tweets, but callback is undefined...~n", [])
             end,
             ok = ibrowse:stream_next(ReqId),
             {noreply, State#state{buffer = NewBuffer}}
     end;
 
 handle_info({ibrowse_async_response, ReqId, {error, req_timedout}}, State = #state{request_id = ReqId}) ->
-    ?ERR_LOG("There're no more twitter results~n", []),
+    ?ERROR("There're no more twitter results~n", []),
     {stop, normal, State};
 handle_info({ibrowse_async_response, ReqId, {error, connection_closed}}, State = #state{request_id = ReqId}) ->
-    ?ERR_LOG("Twitter hung up on us~n", []),
+    ?ERROR("Twitter hung up on us~n", []),
     {stop, normal, State};
 handle_info({ibrowse_async_response, ReqId, {error, Error}}, State = #state{request_id = ReqId}) ->
-    ?ERR_LOG("Error querying twitter: ~p~n", [Error]),
+    ?ERROR("Error querying twitter: ~p~n", [Error]),
     {stop, {error, Error}, State};
 handle_info({ibrowse_async_response_end, ReqId}, State = #state{request_id = ReqId}) ->
-    ?INFO_LOG("End stream: ~p~n", [ReqId]),
+    ?INFO("End stream: ~p~n", [ReqId]),
     {stop, normal, State};
 
 handle_info(_Info, State) ->
@@ -246,7 +246,7 @@ extract_jsons([NewBuffer], Acc) ->
     %%      ...sometimes they just don't send the \r after the last object
     try jsx:decode(NewBuffer) of
         {incomplete, _} ->
-            ?WARN_LOG("Incomplete json: ~p~n", [NewBuffer]),
+            ?WARNING("Incomplete json: ~p~n", [NewBuffer]),
             {Acc, <<>>};
         Json ->
             {lists:reverse([Json|Acc]), <<>>}
@@ -261,7 +261,7 @@ extract_jsons([<<$\n>> | Rest], Acc) ->
 extract_jsons([Next | Rest], Acc) ->
     case jsx:decode(Next) of
         {incomplete, _} ->
-            ?DEBUG_LOG("Incomplete json: ~p~n", [Next]),
+            ?DEBUG("Incomplete json: ~p~n", [Next]),
             extract_jsons(Rest, Acc);
         Json ->
             extract_jsons(Rest, [Json | Acc])

@@ -20,7 +20,7 @@ parse_opts([{callback, Fun} | Rest], State) ->
     NewState = State#state{callback = Fun},
     parse_opts(Rest, NewState);
 parse_opts([Unknown | Rest], State) ->
-    ?WARN_LOG("Unknown options: ~p~n", [Unknown]),
+    ?WARNING("Unknown options: ~p~n", [Unknown]),
     parse_opts(Rest, State).
 
 
