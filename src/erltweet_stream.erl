@@ -108,7 +108,7 @@ handle_call(stop, _From, #state{request_id = ReqId} = State) ->
             ?WARNING("Try close unknown request_id: ~p~n", [ReqId]),
             ok
     end,
-    {stop, normal, State};
+    {stop, normal, ok, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
